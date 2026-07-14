@@ -96,7 +96,7 @@ Body tab
 
 ## Warning
 
-Be careful when sharing your ngrok or other application-generated HTTP request files, as they may contain sensitive credentials, keys, or token information.
+Be careful when sharing your ngrok or other application-generated HTTP request files, as they may contain sensitive credentials, keys, or tokens information.
 
 
 
