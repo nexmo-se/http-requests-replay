@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>HTTP Requests Replayer</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --surface2: #22263a; --border: #2e3350;
+    --accent: #5c6ef8; --accent2: #7c8dff; --green: #22c55e; --red: #ef4444;
+    --yellow: #f59e0b; --orange: #f97316; --text: #e2e8f0; --muted: #8892b0;
+    --font: 'Segoe UI', system-ui, sans-serif; --mono: 'Cascadia Code','Fira Code','Consolas',monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Top bar ── */
+  #topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  #topbar h1 { font-size: 15px; font-weight: 700; color: var(--accent2); white-space: nowrap; }
+  #topbar h1 span { color: var(--muted); font-weight: 400; }
+  #filePathInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; color: var(--text); font-size: 13px; font-family: var(--mono); min-width: 0; }
+  #filePathInput:focus { outline: none; border-color: var(--accent); }
+  .btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background 0.15s; }
+  .btn:hover { background: var(--accent2); }
+  .btn.secondary { background: var(--surface2); border: 1px solid var(--border); color: var(--text); }
+  .btn.secondary:hover { background: var(--border); }
+  .btn.danger { background: var(--red); }
+  .btn.danger:hover { background: #dc2626; }
+  .btn.success { background: var(--green); color: #000; }
+  .btn.orange { background: var(--orange); color: #fff; }
+  .btn.orange:hover { background: #ea6c04; }
+  .btn.purple { background: #7c3aed; color: #fff; }
+  .btn.purple:hover { background: #6d28d9; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #stats { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  /* ── Save modal ── */
+  #saveModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+  #saveModal.open { display: flex; }
+  #saveBox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; width: 480px; display: flex; flex-direction: column; gap: 12px; }
+  #saveBox h3 { font-size: 14px; color: var(--accent2); }
+  #saveBox p { font-size: 12px; color: var(--muted); }
+  #savePathInput { background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 7px 10px; color: var(--text); font-family: var(--mono); font-size: 12px; width: 100%; }
+  #savePathInput:focus { outline: none; border-color: var(--accent); }
+  #saveBox .row { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── Keys modal ── */
+  #keysModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }
+  #keysModal.open { display: flex; }
+  #keysBox { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; width: 580px; max-height: 80vh; display: flex; flex-direction: column; gap: 12px; }
+  #keysBox h3 { font-size: 14px; color: var(--accent2); flex-shrink: 0; }
+  #keysBox p.subtitle { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+  #keysList { overflow-y: auto; flex: 1; }
+  .keys-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .keys-row:last-child { border-bottom: none; }
+  .keys-name { font-family: var(--mono); font-size: 12px; color: var(--accent2); min-width: 180px; flex-shrink: 0; }
+  .keys-val { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #keysBox .row { display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0; padding-top: 4px; }
+
+  /* ── Bulk controls ── */
+  #bulkBar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 8px 16px; display: none; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+  #bulkBar.visible { display: flex; }
+  #bulkBar label { font-size: 12px; color: var(--muted); }
+  #bulkBar input[type=number] { width: 70px; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 4px 8px; color: var(--text); font-size: 13px; }
+  #bulkBar input[type=number]:focus { outline: none; border-color: var(--accent); }
+  #rangeFrom, #rangeTo { width: 60px; }
+  #progressBar { flex: 1; min-width: 120px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  #progressFill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s; }
+  #progressLabel { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  /* ── Main layout ── */
+  #main { display: flex; flex: 1; overflow: hidden; }
+
+  /* ── Request list ── */
+  #listPanel { width: 340px; min-width: 220px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  #listHeader { padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  #filterInput { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; color: var(--text); font-size: 12px; }
+  #filterInput:focus { outline: none; border-color: var(--accent); }
+  #requestList { flex: 1; overflow-y: auto; }
+  .req-item { padding: 9px 12px; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background 0.1s; position: relative; }
+  .req-item:hover { background: var(--surface2); }
+  .req-item.active { background: var(--surface2); border-left-color: var(--accent); }
+  .req-item.replayed { border-left-color: var(--green); }
+  .req-item.replayed.active { border-left-color: var(--accent); }
+  .req-num { font-size: 10px; color: var(--muted); min-width: 22px; text-align: right; }
+  .req-method { font-size: 11px; font-weight: 700; color: var(--accent2); min-width: 36px; }
+  .req-path { font-size: 12px; font-family: var(--mono); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .req-status { font-size: 11px; font-weight: 600; }
+  .req-status.ok { color: var(--green); }
+  .req-status.err { color: var(--red); }
+  .req-check { width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+
+  /* ── Detail panel ── */
+  #detailPanel { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  #detailHeader { padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+  #detailTitle { font-size: 14px; font-weight: 700; font-family: var(--mono); flex: 1; }
+  #targetUrlInput { flex: 2; min-width: 200px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; color: var(--text); font-size: 12px; font-family: var(--mono); }
+  #targetUrlInput:focus { outline: none; border-color: var(--accent); }
+  #detailTabs { display: flex; gap: 2px; padding: 6px 16px 0; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab { padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; border-radius: 6px 6px 0 0; color: var(--muted); border: 1px solid transparent; border-bottom: none; transition: all 0.1s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--bg); color: var(--accent2); border-color: var(--border); }
+  #detailContent { flex: 1; overflow: hidden; padding: 0; position: relative; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; position: absolute; inset: 0; overflow: auto; padding: 16px; }
+  #tab-body.active { display: flex; flex-direction: column; overflow: hidden; padding: 16px; }
+
+  /* ── Headers table ── */
+  .headers-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  .headers-table th { text-align: left; padding: 6px 10px; background: var(--surface2); color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); position: relative; overflow: hidden; white-space: nowrap; }
+  .headers-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow: hidden; }
+  .headers-table td:first-child { color: var(--accent2); font-family: var(--mono); white-space: nowrap; }
+  .headers-table td:last-child { font-family: var(--mono); word-break: break-all; }
+  .header-edit { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; color: var(--text); font-family: var(--mono); font-size: 12px; width: 100%; }
+  .header-edit:focus { outline: none; border-color: var(--accent); }
+  .col-resize-handle { position: absolute; right: 0; top: 0; bottom: 0; width: 4px; cursor: col-resize; background: var(--accent); opacity: 0.35; z-index: 1; transition: opacity 0.15s, width 0.15s; }
+  .col-resize-handle:hover { opacity: 0.85; width: 5px; }
+  .col-resize-handle.dragging { opacity: 1; width: 5px; background: var(--accent2); }
+
+  /* ── Body editor ── */
+  #bodyEditor { width: 100%; flex: 1; min-height: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; color: var(--text); font-family: var(--mono); font-size: 12px; line-height: 1.6; resize: none; }
+  #bodyEditor:focus { outline: none; border-color: var(--accent); }
+  .body-toolbar { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; flex-shrink: 0; }
+  .body-toolbar span { font-size: 12px; color: var(--muted); }
+
+  /* ── Empty state ── */
+  #emptyState { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: 12px; }
+  #emptyState svg { opacity: 0.3; }
+  #emptyState p { font-size: 14px; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* ── Toast ── */
+  #toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; font-size: 13px; z-index: 9999; opacity: 0; transform: translateY(10px); transition: all 0.2s; pointer-events: none; max-width: 320px; }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.ok { border-color: var(--green); color: var(--green); }
+  #toast.err { border-color: var(--red); color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- Save modal -->
+<div id="saveModal">
+  <div id="saveBox">
+    <h3>💾 Save Requests</h3>
+    <p id="saveInfo">Saves only the requests currently shown in the list (after any filtering).</p>
+    <input id="savePathInput" type="text" placeholder="/path/to/output.json" />
+    <div class="row">
+      <button class="btn secondary" onclick="closeSaveModal()">Cancel</button>
+      <button class="btn success" onclick="confirmSave()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Keys Obfuscation modal -->
+<div id="keysModal">
+  <div id="keysBox">
+    <h3><span style="color:#fbbf24;font-size:14px;">&#9919;</span> Keys Obfuscation</h3>
+    <p class="subtitle">Headers whose name contains "key" or "token". Click Obfuscate to replace all values of that header across all requests with <code style="color:var(--accent2)">abcd12345</code>.</p>
+    <div id="keysList"></div>
+    <div class="row">
+      <button class="btn secondary" onclick="closeKeysModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Request modal -->
+<div id="addReqModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;width:560px;display:flex;flex-direction:column;gap:12px;max-height:90vh;overflow-y:auto;">
+    <h3 style="font-size:14px;color:var(--accent2)">➕ Add New Request</h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:12px;color:var(--muted);white-space:nowrap">Method:</label>
+      <select id="newReqMethod" onchange="newReqMethodChange()" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-size:12px;cursor:pointer;">
+        <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option>
+        <option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+      </select>
+      <label style="font-size:12px;color:var(--muted);white-space:nowrap">Path:</label>
+      <input id="newReqPath" type="text" value="/" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;" />
+    </div>
+    <div>
+      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Headers (JSON object):</label>
+      <textarea id="newReqHeaders" rows="5" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical;"></textarea>
+    </div>
+    <div id="newReqBodyWrap">
+      <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Body (JSON):</label>
+      <textarea id="newReqBody" rows="6" spellcheck="false" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px;color:var(--text);font-family:var(--mono);font-size:12px;resize:vertical;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn secondary" onclick="closeAddReqModal()">Cancel</button>
+      <button class="btn success" onclick="confirmAddRequest()">Add Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- Top bar -->
+<div id="topbar">
+  <h1>HTTP <span>Replayer v1.0</span></h1>
+  <input id="filePathInput" type="text" placeholder="Enter path to ngrok log JSON file…" value="sample-requests_export.json" />
+  <button class="btn" onclick="loadFile()">Load</button>
+  <button class="btn secondary" id="saveBtn" style="display:none" onclick="openSaveModal()">💾 Save</button>
+  <span id="stats"></span>
+</div>
+
+<!-- Bulk controls -->
+<div id="bulkBar">
+  <label>Replay:</label>
+  <button class="btn secondary" onclick="selectAll()">All</button>
+  <button class="btn secondary" onclick="selectNone()">None</button>
+  <label>Range:</label>
+  <input id="rangeFrom" type="number" min="1" value="1" placeholder="#" />
+  <span style="color:var(--muted);font-size:12px">to</span>
+  <input id="rangeTo" type="number" min="1" placeholder="#" />
+  <button class="btn secondary" onclick="selectRange()">Select Range</button>
+  <label>Interval (ms):</label>
+  <input id="delayMs" type="number" min="0" value="500" style="width:80px" />
+  <button class="btn success" id="replaySelectedBtn" onclick="replaySelected()">▶ Replay Selected</button>
+  <button class="btn danger" id="stopBtn" onclick="stopReplay()" style="display:none">■ Stop</button>
+  <div id="progressBar"><div id="progressFill"></div></div>
+  <span id="progressLabel"></span>
+</div>
+
+<!-- Find & Replace bar -->
+<div id="frBar" style="background:var(--surface);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
+  <span style="font-size:12px;color:var(--accent2);font-weight:700;white-space:nowrap">🔍 Find &amp; Replace</span>
+  <select id="frScope" onchange="frScopeChange()" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-size:12px;cursor:pointer;">
+    <option value="body-headers">Body, Headers &amp; Query</option>
+    <option value="path">Path</option>
+  </select>
+  <input id="frFind" type="text" placeholder="Find…" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;width:200px;" oninput="frPreview()" />
+  <input id="frReplace" type="text" placeholder="Replace with…" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;width:200px;" />
+  <button class="btn secondary" onclick="frReplaceAll()">Replace All</button>
+  <span id="frCount" style="font-size:11px;color:var(--muted);white-space:nowrap;min-width:80px;"></span>
+  <span style="width:1px;background:var(--border);align-self:stretch;margin:0 4px;"></span>
+  <select id="authSchemeSelect" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-size:12px;cursor:pointer;">
+    <option value="Bearer">Bearer</option>
+    <option value="Basic">Basic</option>
+    <option value="Digest">Digest</option>
+  </select>
+  <button class="btn purple" onclick="obfuscateAuthHeaders()" title="Replace all matching auth header token values with abcd12345" style="padding:5px 10px;font-size:12px;">🔒 Auth Obfuscation</button>
+  <button class="btn purple" onclick="openKeysModal()" title="Find and obfuscate key/token headers" style="padding:5px 10px;font-size:12px;margin-left:12px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><circle cx="8" cy="15" r="4"/><path d="M12 11l8-8"/><path d="M20 3l1 1-3 3-1-1"/><path d="M17 6l1 1"/></svg>Keys Obfuscation</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <!-- List -->
+  <div id="listPanel">
+    <div id="listHeader">
+      <input id="filterInput" type="text" placeholder="Filter by path, method, type…" oninput="filterList()" />
+      <button class="btn" onclick="openAddReqModal()" title="Add new request" style="padding:5px 10px;font-size:12px;color:#fff;">+Add</button>
+    </div>
+    <div id="requestList"></div>
+  </div>
+
+  <!-- Detail -->
+  <div id="detailPanel">
+    <div id="emptyState">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+      </svg>
+      <p>Load a log file to get started</p>
+    </div>
+    <div id="detailInner" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+      <div id="detailHeader">
+        <span id="detailTitle">—</span>
+        <label style="font-size:12px;color:var(--muted);white-space:nowrap">Target URL:</label>
+        <input id="targetUrlInput" type="text" placeholder="https://your-server.example.com" />
+        <button class="btn" onclick="replayCurrent()">▶ Replay</button>
+        <button class="btn secondary" onclick="openModifyModal()">✏ Modify</button>
+        <button class="btn secondary" onclick="moveRequest(-1)" title="Move up">▲</button>
+        <button class="btn secondary" onclick="moveRequest(1)" title="Move down">▼</button>
+        <button class="btn orange" onclick="duplicateCurrent()" title="Duplicate this request">⧉ Dup</button>
+        <button class="btn danger" onclick="deleteCurrentRequest()" title="Delete this request">🗑 Del</button>
+      </div>
+      <div id="detailTabs">
+        <div class="tab active" onclick="switchTab('summary')">Summary</div>
+        <div class="tab" onclick="switchTab('headers')">Headers</div>
+        <div class="tab" onclick="switchTab('params')">Query</div>
+        <div class="tab" onclick="switchTab('body')">Body</div>
+        <div class="tab" onclick="switchTab('raw')">Raw</div>
+        <div class="tab" onclick="switchTab('response')">Response</div>
+      </div>
+      <div id="detailContent">
+        <!-- Summary -->
+        <div id="tab-summary" class="tab-pane active">
+          <table class="headers-table" style="margin-bottom:16px">
+            <tr><td>ID</td><td id="s-id">—</td></tr>
+            <tr><td>Method</td><td id="s-method">—</td></tr>
+            <tr><td>Path</td><td id="s-path">—</td></tr>
+            <tr><td>Start</td><td id="s-start">—</td></tr>
+            <tr><td>Duration</td><td id="s-duration">—</td></tr>
+            <tr><td>Remote IP</td><td id="s-ip">—</td></tr>
+            <tr><td>Response</td><td id="s-response">—</td></tr>
+            <tr><td>Content-Type</td><td id="s-ct">—</td></tr>
+            <tr><td>Body Size</td><td id="s-size">—</td></tr>
+          </table>
+        </div>
+        <!-- Headers -->
+        <div id="tab-headers" class="tab-pane">
+          <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+            <select id="newHeaderSelect" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;flex:1;min-width:160px;">
+              <option value="">— Add header —</option>
+              <option value="Accept">Accept</option>
+              <option value="Accept-Charset">Accept-Charset</option>
+              <option value="Accept-Encoding">Accept-Encoding</option>
+              <option value="Accept-Language">Accept-Language</option>
+              <option value="Accept-Ranges">Accept-Ranges</option>
+              <option value="Access-Control-Allow-Credentials">Access-Control-Allow-Credentials</option>
+              <option value="Access-Control-Allow-Headers">Access-Control-Allow-Headers</option>
+              <option value="Access-Control-Allow-Methods">Access-Control-Allow-Methods</option>
+              <option value="Access-Control-Allow-Origin">Access-Control-Allow-Origin</option>
+              <option value="Access-Control-Expose-Headers">Access-Control-Expose-Headers</option>
+              <option value="Access-Control-Max-Age">Access-Control-Max-Age</option>
+              <option value="Access-Control-Request-Headers">Access-Control-Request-Headers</option>
+              <option value="Access-Control-Request-Method">Access-Control-Request-Method</option>
+              <option value="Age">Age</option>
+              <option value="Allow">Allow</option>
+              <option value="Authorization">Authorization</option>
+              <option value="Cache-Control">Cache-Control</option>
+              <option value="Clear-Site-Data">Clear-Site-Data</option>
+              <option value="Connection">Connection</option>
+              <option value="Content-Disposition">Content-Disposition</option>
+              <option value="Content-Encoding">Content-Encoding</option>
+              <option value="Content-Language">Content-Language</option>
+              <option value="Content-Length">Content-Length</option>
+              <option value="Content-Location">Content-Location</option>
+              <option value="Content-Range">Content-Range</option>
+              <option value="Content-Security-Policy">Content-Security-Policy</option>
+              <option value="Content-Type">Content-Type</option>
+              <option value="Cookie">Cookie</option>
+              <option value="Cross-Origin-Embedder-Policy">Cross-Origin-Embedder-Policy</option>
+              <option value="Cross-Origin-Opener-Policy">Cross-Origin-Opener-Policy</option>
+              <option value="Cross-Origin-Resource-Policy">Cross-Origin-Resource-Policy</option>
+              <option value="Date">Date</option>
+              <option value="ETag">ETag</option>
+              <option value="Expect">Expect</option>
+              <option value="Expires">Expires</option>
+              <option value="Forwarded">Forwarded</option>
+              <option value="From">From</option>
+              <option value="Host">Host</option>
+              <option value="If-Match">If-Match</option>
+              <option value="If-Modified-Since">If-Modified-Since</option>
+              <option value="If-None-Match">If-None-Match</option>
+              <option value="If-Range">If-Range</option>
+              <option value="If-Unmodified-Since">If-Unmodified-Since</option>
+              <option value="Keep-Alive">Keep-Alive</option>
+              <option value="Last-Modified">Last-Modified</option>
+              <option value="Link">Link</option>
+              <option value="Location">Location</option>
+              <option value="Max-Forwards">Max-Forwards</option>
+              <option value="Origin">Origin</option>
+              <option value="Permissions-Policy">Permissions-Policy</option>
+              <option value="Pragma">Pragma</option>
+              <option value="Proxy-Authenticate">Proxy-Authenticate</option>
+              <option value="Proxy-Authorization">Proxy-Authorization</option>
+              <option value="Range">Range</option>
+              <option value="Referer">Referer</option>
+              <option value="Referrer-Policy">Referrer-Policy</option>
+              <option value="Retry-After">Retry-After</option>
+              <option value="Sec-Fetch-Dest">Sec-Fetch-Dest</option>
+              <option value="Sec-Fetch-Mode">Sec-Fetch-Mode</option>
+              <option value="Sec-Fetch-Site">Sec-Fetch-Site</option>
+              <option value="Sec-Fetch-User">Sec-Fetch-User</option>
+              <option value="Sec-WebSocket-Accept">Sec-WebSocket-Accept</option>
+              <option value="Sec-WebSocket-Extensions">Sec-WebSocket-Extensions</option>
+              <option value="Sec-WebSocket-Key">Sec-WebSocket-Key</option>
+              <option value="Sec-WebSocket-Protocol">Sec-WebSocket-Protocol</option>
+              <option value="Sec-WebSocket-Version">Sec-WebSocket-Version</option>
+              <option value="Server">Server</option>
+              <option value="Server-Timing">Server-Timing</option>
+              <option value="Set-Cookie">Set-Cookie</option>
+              <option value="Strict-Transport-Security">Strict-Transport-Security</option>
+              <option value="TE">TE</option>
+              <option value="Timing-Allow-Origin">Timing-Allow-Origin</option>
+              <option value="Trailer">Trailer</option>
+              <option value="Transfer-Encoding">Transfer-Encoding</option>
+              <option value="Upgrade">Upgrade</option>
+              <option value="Upgrade-Insecure-Requests">Upgrade-Insecure-Requests</option>
+              <option value="User-Agent">User-Agent</option>
+              <option value="Vary">Vary</option>
+              <option value="Via">Via</option>
+              <option value="WWW-Authenticate">WWW-Authenticate</option>
+              <option value="Warning">Warning</option>
+              <option value="X-Api-Key">X-Api-Key</option>
+              <option value="X-Content-Type-Options">X-Content-Type-Options</option>
+              <option value="X-Correlation-ID">X-Correlation-ID</option>
+              <option value="X-Forwarded-For">X-Forwarded-For</option>
+              <option value="X-Forwarded-Host">X-Forwarded-Host</option>
+              <option value="X-Forwarded-Proto">X-Forwarded-Proto</option>
+              <option value="X-Frame-Options">X-Frame-Options</option>
+              <option value="X-RateLimit-Limit">X-RateLimit-Limit</option>
+              <option value="X-RateLimit-Remaining">X-RateLimit-Remaining</option>
+              <option value="X-RateLimit-Reset">X-RateLimit-Reset</option>
+              <option value="X-Request-ID">X-Request-ID</option>
+              <option value="X-XSS-Protection">X-XSS-Protection</option>
+              <option value="__custom__">Custom…</option>
+            </select>
+            <input id="newHeaderCustomName" type="text" placeholder="Header name" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;width:160px;" />
+            <input id="newHeaderValue" type="text" placeholder="Value" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;flex:2;min-width:120px;" />
+            <button class="btn secondary" onclick="addHeader()">+ Add</button>
+          </div>
+          <table class="headers-table" id="headersTable">
+            <thead><tr><th>Header</th><th>Value</th><th style="width:32px"></th></tr></thead>
+            <tbody id="headersBody"></tbody>
+          </table>
+        </div>
+        <!-- Query Params -->
+        <div id="tab-params" class="tab-pane">
+          <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+            <input id="newParamKey" type="text" placeholder="Parameter name" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;flex:1;min-width:120px;" />
+            <input id="newParamValue" type="text" placeholder="Value" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;flex:2;min-width:120px;" />
+            <button class="btn secondary" onclick="addParam()">+ Add</button>
+          </div>
+          <table class="headers-table" id="paramsTable">
+            <thead><tr><th>Parameter</th><th>Value</th><th style="width:32px"></th></tr></thead>
+            <tbody id="paramsBody"></tbody>
+          </table>
+          <p id="paramsNote" style="font-size:11px;color:var(--muted);margin-top:10px;display:none">⚠ Changes update the URI and Target URL. Save to persist.</p>
+        </div>
+        <!-- Body -->
+        <div id="tab-body" class="tab-pane">
+          <div class="body-toolbar">
+            <button class="btn secondary" onclick="formatBody()">Format JSON</button>
+            <button class="btn secondary" onclick="minifyBody()">Minify</button>
+            <span id="bodyInfo"></span>
+          </div>
+          <textarea id="bodyEditor" spellcheck="false"></textarea>
+        </div>
+        <!-- Raw -->
+        <div id="tab-raw" class="tab-pane">
+          <pre id="rawContent" style="font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-all;color:var(--text)"></pre>
+        </div>
+        <!-- Response -->
+        <div id="tab-response" class="tab-pane">
+          <div id="responseArea">
+            <p style="color:var(--muted);font-size:13px">No replay result yet. Click Replay to send this request.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let allRequests    = [];
+let filteredRequests = [];
+let currentIndex   = null;
+let editedRequests = {};
+let replayResults  = {};
+let stopFlag       = false;
+let loadedFilePath = '';
+
+// ── Load ───────────────────────────────────────────────────────────────────────
+async function loadFile() {
+  const filePath = document.getElementById('filePathInput').value.trim();
+  if (!filePath) return toast('Enter a file path', 'err');
+  try {
+    const res  = await fetch('/api/load', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filePath }) });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error, 'err');
+    allRequests      = data.requests;
+    filteredRequests = [...allRequests];
+    editedRequests   = {};
+    replayResults    = {};
+    currentIndex     = null;
+    loadedFilePath   = filePath;
+    document.getElementById('stats').textContent = `${data.total} requests`;
+    document.getElementById('bulkBar').classList.add('visible');
+    document.getElementById('saveBtn').style.display = 'inline-block';
+    document.getElementById('rangeTo').value = data.total;
+    if (allRequests.length > 0) {
+      const host = allRequests[0].request?.headers?.Host?.[0] || '';
+      if (host) document.getElementById('targetUrlInput').value = `https://${host}`;
+    }
+    renderList();
+    const activeTab = document.querySelector('.tab.active');
+    const tabNames  = ['summary','headers','params','body','raw','response'];
+    const curTab    = tabNames[Array.from(document.querySelectorAll('.tab')).indexOf(activeTab)] || 'summary';
+    if (curTab !== 'headers' && curTab !== 'body') switchTab('summary');
+    if (allRequests.length > 0) selectRequest(0);
+    toast(`Loaded ${data.total} requests`, 'ok');
+  } catch (e) { toast('Failed to connect to server: ' + e.message, 'err'); }
+}
+
+// ── Save ───────────────────────────────────────────────────────────────────────
+function openSaveModal() {
+  document.getElementById('savePathInput').value = loadedFilePath;
+  document.getElementById('saveInfo').textContent =
+    `Saves ${filteredRequests.length} request(s) currently shown (filtered view).`;
+  document.getElementById('saveModal').classList.add('open');
+}
+function closeSaveModal() { document.getElementById('saveModal').classList.remove('open'); }
+
+async function confirmSave() {
+  const filePath = document.getElementById('savePathInput').value.trim();
+  if (!filePath) return toast('Enter a file path', 'err');
+  const toSave = [...filteredRequests].reverse().map((req) => {
+    const origIdx = allRequests.indexOf(req);
+    const edited  = editedRequests[origIdx];
+    if (!edited) return req;
+    const clone = JSON.parse(JSON.stringify(req));
+    const finalHeaders = edited.headers || req.request?.headers || {};
+    if (edited.headers) clone.request.headers = edited.headers;
+    try {
+      const oldRaw    = atob(req.request.raw || '');
+      const firstLine = oldRaw.split('\r\n')[0];
+      const hdrLines  = [];
+      for (const [k, v] of Object.entries(finalHeaders)) {
+        hdrLines.push(`${k}: ${Array.isArray(v) ? v[0] : v}`);
+      }
+      const body = edited.body !== undefined ? edited.body : (() => {
+        const parts = oldRaw.split('\r\n\r\n');
+        return parts.length > 1 ? parts.slice(1).join('\r\n\r\n') : '';
+      })();
+      const rawText = firstLine + '\r\n' + hdrLines.join('\r\n') + '\r\n\r\n' + body;
+      clone.request.raw = btoa(unescape(encodeURIComponent(rawText)));
+    } catch { /* keep original raw */ }
+    return clone;
+  });
+  try {
+    const res  = await fetch('/api/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filePath, requests: toSave }) });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error, 'err');
+    closeSaveModal();
+    toast(`Saved ${data.saved} request(s) to ${filePath}`, 'ok');
+  } catch (e) { toast('Save failed: ' + e.message, 'err'); }
+}
+
+// ── Render list ────────────────────────────────────────────────────────────────
+function renderList() {
+  const list = document.getElementById('requestList');
+  list.innerHTML = '';
+  filteredRequests.forEach((req, idx) => {
+    const origIdx = allRequests.indexOf(req);
+    const result  = replayResults[origIdx];
+    const edited  = editedRequests[origIdx];
+    const item    = document.createElement('div');
+    item.className = 'req-item' + (idx === currentIndex ? ' active' : '') + (result ? ' replayed' : '');
+    item.dataset.idx = idx;
+    const statusColor = result ? (result.status >= 200 && result.status < 300 ? 'ok' : 'err') : '';
+    const statusText  = result ? result.status : (req.response?.status_code || '');
+    item.innerHTML = `
+      <input type="checkbox" class="req-check" data-orig="${origIdx}" onclick="event.stopPropagation()" />
+      <span class="req-num">${idx + 1}</span>
+      <span class="req-method">${req.request?.method || '?'}</span>
+      <span class="req-path" title="${req.request?.uri || ''}">${req.request?.uri || '/'}</span>
+      <span class="req-status ${statusColor}">${statusText}</span>
+      ${edited ? '<span title="Modified" style="color:var(--yellow);font-size:10px">✎</span>' : ''}
+    `;
+    item.addEventListener('click', () => selectRequest(idx));
+    list.appendChild(item);
+  });
+}
+
+// ── Filter ─────────────────────────────────────────────────────────────────────
+function filterList() {
+  const q = document.getElementById('filterInput').value.toLowerCase();
+  filteredRequests = q
+    ? allRequests.filter(r =>
+        (r.request?.uri || '').toLowerCase().includes(q) ||
+        (r.request?.method || '').toLowerCase().includes(q) ||
+        getDecodedBody(r).toLowerCase().includes(q))
+    : [...allRequests];
+  currentIndex = null;
+  renderList();
+}
+
+// ── Select request ─────────────────────────────────────────────────────────────
+function selectRequest(idx) {
+  currentIndex = idx;
+  const req     = filteredRequests[idx];
+  const origIdx = allRequests.indexOf(req);
+  const edited  = editedRequests[origIdx] || {};
+
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('detailInner').style.display = 'flex';
+
+  document.getElementById('detailTitle').textContent = `${req.request?.method} ${req.request?.uri}`;
+  document.getElementById('s-id').textContent       = req.id || '—';
+  document.getElementById('s-method').textContent   = req.request?.method || '—';
+  document.getElementById('s-path').textContent     = req.request?.uri || '—';
+  document.getElementById('s-start').textContent    = req.start || '—';
+  document.getElementById('s-duration').textContent = req.duration ? `${(req.duration/1000).toFixed(2)} ms` : '—';
+  document.getElementById('s-ip').textContent       = req.remote_addr || '—';
+  document.getElementById('s-response').textContent = `${req.response?.status_code} ${req.response?.status || ''}`;
+  document.getElementById('s-ct').textContent       = (req.request?.headers?.['Content-Type'] || req.request?.headers?.['content-type'] || ['—'])[0];
+  document.getElementById('s-size').textContent     = (req.request?.headers?.['Content-Length'] || req.request?.headers?.['content-length'] || ['—'])[0] + ' bytes';
+
+  renderHeaders(origIdx);
+  renderParams();
+
+  const body = edited.body !== undefined ? edited.body : getDecodedBody(req);
+  const ta   = document.getElementById('bodyEditor');
+  let prettyBody = body;
+  try { prettyBody = JSON.stringify(JSON.parse(body), null, 2); } catch {}
+  ta.value = prettyBody;
+  document.getElementById('bodyInfo').textContent = `${prettyBody.length} chars`;
+  ta.oninput = () => {
+    if (!editedRequests[origIdx]) editedRequests[origIdx] = {};
+    editedRequests[origIdx].body = ta.value;
+    updateContentLength(origIdx, ta.value);
+    renderList();
+  };
+
+  const raw = req.request?.raw || '';
+  try { document.getElementById('rawContent').textContent = atob(raw); }
+  catch { document.getElementById('rawContent').textContent = raw; }
+
+  showReplayResult(origIdx);
+
+  const base = getBaseUrl();
+  if (base) {
+    try {
+      const u = new URL(base);
+      u.pathname = req.request?.uri || '/';
+      document.getElementById('targetUrlInput').value = u.toString();
+    } catch {}
+  }
+  renderList();
+}
+
+function updateHeader(origIdx, key, value) {
+  if (!editedRequests[origIdx]) editedRequests[origIdx] = {};
+  if (!editedRequests[origIdx].headers)
+    editedRequests[origIdx].headers = JSON.parse(JSON.stringify(allRequests[origIdx]?.request?.headers || {}));
+  editedRequests[origIdx].headers[key] = [value];
+  renderList();
+}
+
+// ── Body helpers ───────────────────────────────────────────────────────────────
+function getDecodedBody(req) {
+  const raw = req.request?.raw || '';
+  if (!raw) return '';
+  try {
+    const decoded = atob(raw);
+    const parts   = decoded.split('\r\n\r\n');
+    return parts.length > 1 ? parts.slice(1).join('\r\n\r\n') : '';
+  } catch { return ''; }
+}
+
+function formatBody() {
+  const ta = document.getElementById('bodyEditor');
+  try { ta.value = JSON.stringify(JSON.parse(ta.value), null, 2); ta.dispatchEvent(new Event('input')); }
+  catch { toast('Not valid JSON', 'err'); }
+}
+function minifyBody() {
+  const ta = document.getElementById('bodyEditor');
+  try { ta.value = JSON.stringify(JSON.parse(ta.value)); ta.dispatchEvent(new Event('input')); }
+  catch { toast('Not valid JSON', 'err'); }
+}
+
+// ── Auto-update Content-Length ─────────────────────────────────────────────────
+function updateContentLength(origIdx, newBody) {
+  const byteLen = new TextEncoder().encode(newBody).length;
+  if (!editedRequests[origIdx]) editedRequests[origIdx] = {};
+  if (!editedRequests[origIdx].headers)
+    editedRequests[origIdx].headers = JSON.parse(JSON.stringify(allRequests[origIdx]?.request?.headers || {}));
+  const hdrs = editedRequests[origIdx].headers;
+  const key  = Object.keys(hdrs).find(k => k.toLowerCase() === 'content-length') || 'Content-Length';
+  hdrs[key]  = [String(byteLen)];
+}
+
+// ── Tabs ───────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  const names = ['summary','headers','params','body','raw','response'];
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', names[i] === name));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (name === 'params' && currentIndex !== null) renderParams();
+}
+
+// ── Replay single ──────────────────────────────────────────────────────────────
+async function replayCurrent() {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const req     = filteredRequests[currentIndex];
+  const origIdx = allRequests.indexOf(req);
+  await replayOne(req, origIdx);
+  showReplayResult(origIdx);
+  switchTab('response');
+  renderList();
+}
+
+async function replayOne(req, origIdx) {
+  const edited      = editedRequests[origIdx] || {};
+  const headers     = edited.headers || req.request?.headers || {};
+  const body        = edited.body !== undefined ? edited.body : getDecodedBody(req);
+  const base        = getBaseUrl();
+  if (!base) return null;
+  const url         = new URL(base);
+  url.pathname      = req.request?.uri || '/';
+  const targetUrl   = url.toString();
+  const flatHeaders = {};
+  for (const [k, v] of Object.entries(headers)) flatHeaders[k] = Array.isArray(v) ? v[0] : v;
+  try {
+    const res  = await fetch('/api/replay', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ targetUrl, method: req.request?.method || 'POST', headers: flatHeaders, body }) });
+    const data = await res.json();
+    replayResults[origIdx] = data;
+    return data;
+  } catch (e) { replayResults[origIdx] = { error: e.message }; return null; }
+}
+
+function showReplayResult(origIdx) {
+  const result = replayResults[origIdx];
+  const area   = document.getElementById('responseArea');
+  if (!result) { area.innerHTML = '<p style="color:var(--muted);font-size:13px">No replay result yet.</p>'; return; }
+  if (result.error) { area.innerHTML = `<div style="color:var(--red);font-size:13px">Error: ${escHtml(result.error)}</div>`; return; }
+  const color = result.status >= 200 && result.status < 300 ? 'var(--green)' : 'var(--red)';
+  let bodyStr = result.body || '';
+  try { bodyStr = JSON.stringify(JSON.parse(bodyStr), null, 2); } catch {}
+  area.innerHTML = `
+    <div style="color:${color};font-size:14px;font-weight:700;margin-bottom:8px">
+      ${result.status} ${result.statusText || ''} <span style="color:var(--muted);font-size:12px;font-weight:400">(${result.duration}ms)</span>
+    </div>
+    <pre style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:10px;font-family:var(--mono);font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto">${escHtml(bodyStr)}</pre>`;
+}
+
+// ── Replay selected ────────────────────────────────────────────────────────────
+async function replaySelected() {
+  const checked = [...document.querySelectorAll('.req-check:checked')];
+  if (checked.length === 0) return toast('Select at least one request', 'err');
+  const delay = parseInt(document.getElementById('delayMs').value) || 0;
+  stopFlag = false;
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  document.getElementById('replaySelectedBtn').disabled = true;
+  let done = 0;
+  for (const cb of checked) {
+    if (stopFlag) break;
+    const origIdx = parseInt(cb.dataset.orig);
+    await replayOne(allRequests[origIdx], origIdx);
+    done++;
+    document.getElementById('progressFill').style.width = Math.round((done/checked.length)*100) + '%';
+    document.getElementById('progressLabel').textContent = `${done}/${checked.length}`;
+    renderList();
+    if (delay > 0 && done < checked.length) await sleep(delay);
+  }
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('replaySelectedBtn').disabled = false;
+  toast(`Replayed ${done} request(s)`, 'ok');
+}
+
+function stopReplay() {
+  stopFlag = true;
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('replaySelectedBtn').disabled = false;
+  toast('Stopped', 'err');
+}
+
+// ── Modify (inline) ────────────────────────────────────────────────────────────
+function openModifyModal() {
+  const active  = document.querySelector('.tab.active');
+  const names   = ['summary','headers','params','body','raw','response'];
+  const current = names[Array.from(document.querySelectorAll('.tab')).indexOf(active)];
+  const target  = (current === 'headers' || current === 'body') ? current : 'body';
+  switchTab(target);
+  toast('Edit ' + target + ' then click ▶ Replay', 'ok');
+}
+
+// ── Duplicate request ──────────────────────────────────────────────────────────
+function duplicateCurrent() {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const req     = filteredRequests[currentIndex];
+  const origIdx = allRequests.indexOf(req);
+  const clone   = JSON.parse(JSON.stringify(req));
+  clone._duplicate = true;
+  allRequests.splice(origIdx + 1, 0, clone);
+  if (editedRequests[origIdx]) {
+    editedRequests[origIdx + 1] = JSON.parse(JSON.stringify(editedRequests[origIdx]));
+    const newEdited = {};
+    for (const [k, v] of Object.entries(editedRequests)) {
+      const ki = parseInt(k);
+      if (ki > origIdx + 1) newEdited[ki + 1] = v;
+      else newEdited[ki] = v;
+    }
+    Object.assign(editedRequests, newEdited);
+  }
+  filteredRequests = allRequests.filter(r => filteredRequests.includes(r) || r === clone);
+  currentIndex = filteredRequests.indexOf(clone);
+  document.getElementById('stats').textContent = `${allRequests.length} requests`;
+  renderList();
+  selectRequest(currentIndex);
+  toast('Request duplicated', 'ok');
+}
+
+// ── Delete request ─────────────────────────────────────────────────────────────
+function deleteCurrentRequest() {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const req   = filteredRequests[currentIndex];
+  const label = `${req.request?.method} ${req.request?.uri}`;
+  if (!confirm(`Delete request #${currentIndex + 1}: ${label}?\nThis cannot be undone.`)) return;
+  const origIdx = allRequests.indexOf(req);
+  allRequests.splice(origIdx, 1);
+  const newEdited = {}, newResults = {};
+  for (const [k, v] of Object.entries(editedRequests)) {
+    const ki = parseInt(k);
+    if (ki !== origIdx) newEdited[ki > origIdx ? ki - 1 : ki] = v;
+  }
+  for (const [k, v] of Object.entries(replayResults)) {
+    const ki = parseInt(k);
+    if (ki !== origIdx) newResults[ki > origIdx ? ki - 1 : ki] = v;
+  }
+  editedRequests = newEdited;
+  replayResults  = newResults;
+  filteredRequests = allRequests.filter(r => filteredRequests.includes(r));
+  currentIndex = filteredRequests.length > 0 ? Math.min(currentIndex, filteredRequests.length - 1) : null;
+  document.getElementById('stats').textContent = `${allRequests.length} requests`;
+  document.getElementById('rangeTo').value = allRequests.length;
+  if (currentIndex !== null) {
+    selectRequest(currentIndex);
+  } else {
+    document.getElementById('emptyState').style.display = '';
+    document.getElementById('detailInner').style.display = 'none';
+  }
+  renderList();
+  toast(`Deleted: ${label}`, 'ok');
+}
+
+// ── Select helpers ─────────────────────────────────────────────────────────────
+function selectAll()  { document.querySelectorAll('.req-check').forEach(cb => cb.checked = true); }
+function selectNone() { document.querySelectorAll('.req-check').forEach(cb => cb.checked = false); }
+function selectRange() {
+  const from = parseInt(document.getElementById('rangeFrom').value) - 1;
+  const to   = parseInt(document.getElementById('rangeTo').value) - 1;
+  document.querySelectorAll('.req-check').forEach((cb, i) => { cb.checked = i >= from && i <= to; });
+}
+
+// ── URL helper ─────────────────────────────────────────────────────────────────
+function getBaseUrl() {
+  const val = document.getElementById('targetUrlInput').value.trim();
+  if (!val) return null;
+  try { const u = new URL(val); return `${u.protocol}//${u.host}`; }
+  catch { return val; }
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────────
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+let toastTimer;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ── Find & Replace ─────────────────────────────────────────────────────────────
+function frScopeChange() {
+  document.getElementById('frFind').value    = '';
+  document.getElementById('frReplace').value = '';
+  document.getElementById('frCount').textContent = '';
+}
+
+function frPreview() {
+  const find  = document.getElementById('frFind').value;
+  const scope = document.getElementById('frScope').value;
+  const el    = document.getElementById('frCount');
+  if (!find) { el.textContent = ''; return; }
+  let count = 0;
+  if (scope === 'body-headers') {
+    for (let i = 0; i < allRequests.length; i++) {
+      const body = editedRequests[i]?.body !== undefined ? editedRequests[i].body : getDecodedBody(allRequests[i]);
+      if (body.includes(find)) { count++; continue; }
+      const hdrs = editedRequests[i]?.headers || allRequests[i]?.request?.headers || {};
+      let matched = false;
+      for (const v of Object.values(hdrs)) {
+        if (String(Array.isArray(v) ? v[0] : v).includes(find)) { matched = true; break; }
+      }
+      if (matched) { count++; continue; }
+      const { params } = getUriParts(allRequests[i].request?.uri || '/');
+      if (params.some(([k, v]) => k.includes(find) || v.includes(find))) count++;
+    }
+  } else {
+    count = allRequests.filter(r => (r.request?.uri || '').includes(find)).length;
+  }
+  el.textContent = count ? `${count} request(s) match` : 'no matches';
+  el.style.color = count ? 'var(--green)' : 'var(--red)';
+}
+
+function frReplaceAll() {
+  const find  = document.getElementById('frFind').value;
+  const repl  = document.getElementById('frReplace').value;
+  const scope = document.getElementById('frScope').value;
+  if (!find) return toast('Enter a find value', 'err');
+  let count = 0;
+  if (scope === 'body-headers') {
+    for (let i = 0; i < allRequests.length; i++) {
+      let changed = false;
+      const body = editedRequests[i]?.body !== undefined ? editedRequests[i].body : getDecodedBody(allRequests[i]);
+      if (body.includes(find)) {
+        const nb = body.split(find).join(repl);
+        if (!editedRequests[i]) editedRequests[i] = {};
+        editedRequests[i].body = nb;
+        updateContentLength(i, nb);
+        changed = true;
+      }
+      const srcHdrs = editedRequests[i]?.headers || allRequests[i]?.request?.headers || {};
+      const newHdrs = {}; let hdrChanged = false;
+      for (const [k, v] of Object.entries(srcHdrs)) {
+        const val = String(Array.isArray(v) ? v[0] : v);
+        const nv  = val.split(find).join(repl);
+        newHdrs[k] = [nv];
+        if (nv !== val) hdrChanged = true;
+      }
+      if (hdrChanged) {
+        if (!editedRequests[i]) editedRequests[i] = {};
+        editedRequests[i].headers = newHdrs;
+        changed = true;
+      }
+      const { path: qPath, params } = getUriParts(allRequests[i].request?.uri || '/');
+      let qChanged = false;
+      const newParams = params.map(([k, v]) => {
+        const nk = k.split(find).join(repl);
+        const nv = v.split(find).join(repl);
+        if (nk !== k || nv !== v) qChanged = true;
+        return [nk, nv];
+      });
+      if (qChanged) { allRequests[i].request.uri = buildUri(qPath, newParams); changed = true; }
+      if (changed) count++;
+    }
+    if (currentIndex !== null) {
+      const origIdx = allRequests.indexOf(filteredRequests[currentIndex]);
+      const ed = editedRequests[origIdx];
+      if (ed?.body !== undefined) {
+        const ta = document.getElementById('bodyEditor');
+        try { ta.value = JSON.stringify(JSON.parse(ed.body), null, 2); } catch { ta.value = ed.body; }
+        document.getElementById('bodyInfo').textContent = `${ed.body.length} chars`;
+      }
+      if (ed?.headers) {
+        renderHeaders(origIdx);
+        const hostKey = Object.keys(ed.headers).find(k => k.toLowerCase() === 'host');
+        if (hostKey) {
+          const newHost = Array.isArray(ed.headers[hostKey]) ? ed.headers[hostKey][0] : ed.headers[hostKey];
+          const curUrl  = document.getElementById('targetUrlInput').value.trim();
+          const proto   = curUrl.startsWith('http://') ? 'http' : 'https';
+          const req     = filteredRequests[currentIndex];
+          document.getElementById('targetUrlInput').value = `${proto}://${newHost}${req.request?.uri || '/'}`;
+        }
+      }
+      renderParams();
+      const curReq = filteredRequests[currentIndex];
+      const base = getBaseUrl();
+      if (base) {
+        try { const u = new URL(base); document.getElementById('targetUrlInput').value = u.origin + curReq.request.uri; } catch {}
+      }
+      document.getElementById('detailTitle').textContent = `${curReq.request?.method} ${curReq.request?.uri}`;
+      document.getElementById('s-path').textContent = curReq.request?.uri;
+    }
+    if (count === 0) return toast('No matches found', 'err');
+    toast(`Replaced in ${count} request(s) — body, headers & query`, 'ok');
+  } else {
+    for (let i = 0; i < allRequests.length; i++) {
+      const uri = allRequests[i].request?.uri || '';
+      if (!uri.includes(find)) continue;
+      allRequests[i].request.uri = uri.split(find).join(repl);
+      count++;
+    }
+    if (count === 0) return toast('No path matches found', 'err');
+    if (currentIndex !== null) {
+      const req  = filteredRequests[currentIndex];
+      const base = getBaseUrl();
+      if (base) {
+        try { const u = new URL(base); u.pathname = req.request?.uri || '/'; document.getElementById('targetUrlInput').value = u.toString(); } catch {}
+      }
+      selectRequest(currentIndex);
+    }
+    toast(`Path replaced in ${count} request(s)`, 'ok');
+  }
+  document.getElementById('frCount').textContent = `replaced in ${count} request(s)`;
+  document.getElementById('frCount').style.color = 'var(--green)';
+  renderList();
+}
+
+// ── Auth header obfuscation ────────────────────────────────────────────────────
+function obfuscateAuthHeaders() {
+  const scheme      = document.getElementById('authSchemeSelect').value;
+  const prefix      = scheme + ' ';
+  const replacement = scheme + ' abcd12345';
+  let count = 0;
+  for (let i = 0; i < allRequests.length; i++) {
+    const srcHdrs = editedRequests[i]?.headers || allRequests[i]?.request?.headers || {};
+    let changed = false;
+    const newHdrs = {};
+    for (const [k, v] of Object.entries(srcHdrs)) {
+      const val = Array.isArray(v) ? v[0] : String(v);
+      if (val.startsWith(prefix)) {
+        newHdrs[k] = [replacement];
+        changed = true;
+      } else {
+        newHdrs[k] = Array.isArray(v) ? v : [val];
+      }
+    }
+    if (changed) {
+      if (!editedRequests[i]) editedRequests[i] = {};
+      editedRequests[i].headers = newHdrs;
+      count++;
+    }
+  }
+  if (count === 0) return toast(`No ${scheme} auth headers found`, 'err');
+  if (currentIndex !== null) {
+    const origIdx = allRequests.indexOf(filteredRequests[currentIndex]);
+    renderHeaders(origIdx);
+  }
+  renderList();
+  toast(`${scheme} token obfuscated in ${count} request(s)`, 'ok');
+}
+
+// ── Keys Obfuscation modal ─────────────────────────────────────────────────────
+function openKeysModal() {
+  // Collect all unique header names (case-insensitive) containing "key" or "token"
+  const found = new Map(); // lowercase name → { originalKey, sampleValue }
+  for (let i = 0; i < allRequests.length; i++) {
+    const hdrs = editedRequests[i]?.headers || allRequests[i]?.request?.headers || {};
+    for (const [k, v] of Object.entries(hdrs)) {
+      const kl = k.toLowerCase();
+      if ((kl.includes('key') || kl.includes('token')) && !found.has(kl)) {
+        const val = Array.isArray(v) ? v[0] : String(v);
+        found.set(kl, { originalKey: k, sampleValue: val });
+      }
+    }
+  }
+
+  const list = document.getElementById('keysList');
+  list.innerHTML = '';
+
+  if (found.size === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:12px;padding:10px 0">No headers containing "key" or "token" found.</p>';
+  } else {
+    found.forEach(({ originalKey, sampleValue }, lowerKey) => {
+      const row = document.createElement('div');
+      row.className = 'keys-row';
+      row.dataset.lowerKey = lowerKey;
+      row.innerHTML = `
+        <span class="keys-name">${escHtml(originalKey)}</span>
+        <span class="keys-val" title="${escHtml(sampleValue)}">${escHtml(sampleValue)}</span>
+        <button class="btn secondary" style="padding:3px 10px;font-size:11px;flex-shrink:0;"
+          onclick="obfuscateKeyHeader('${escHtml(lowerKey)}', this)">Obfuscate</button>`;
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById('keysModal').classList.add('open');
+}
+
+function closeKeysModal() {
+  document.getElementById('keysModal').classList.remove('open');
+}
+
+function obfuscateKeyHeader(lowerKey, btn) {
+  let count = 0;
+  for (let i = 0; i < allRequests.length; i++) {
+    const srcHdrs = editedRequests[i]?.headers || allRequests[i]?.request?.headers || {};
+    let changed = false;
+    const newHdrs = {};
+    for (const [k, v] of Object.entries(srcHdrs)) {
+      if (k.toLowerCase() === lowerKey) {
+        newHdrs[k] = ['abcd12345'];
+        changed = true;
+      } else {
+        newHdrs[k] = Array.isArray(v) ? v : [String(v)];
+      }
+    }
+    if (changed) {
+      if (!editedRequests[i]) editedRequests[i] = {};
+      editedRequests[i].headers = newHdrs;
+      count++;
+    }
+  }
+
+  // Update the sample value in the dialog row
+  const row = btn.closest('.keys-row');
+  if (row) {
+    row.querySelector('.keys-val').textContent = 'abcd12345';
+    btn.textContent = '✓ Done';
+    btn.disabled = true;
+  }
+
+  // Refresh headers tab if visible
+  if (currentIndex !== null) {
+    const origIdx = allRequests.indexOf(filteredRequests[currentIndex]);
+    renderHeaders(origIdx);
+  }
+  renderList();
+  toast(`"${lowerKey}" obfuscated in ${count} request(s)`, 'ok');
+}
+
+document.getElementById('keysModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeKeysModal();
+});
+
+// ── Headers: render, add, delete ──────────────────────────────────────────────
+function renderHeaders(origIdx) {
+  const req     = allRequests[origIdx];
+  const edited  = editedRequests[origIdx] || {};
+  const headers = edited.headers || req?.request?.headers || {};
+  const tbody   = document.getElementById('headersBody');
+  tbody.innerHTML = '';
+  for (const [k, v] of Object.entries(headers)) {
+    const val = Array.isArray(v) ? v[0] : v;
+    const tr  = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escHtml(k)}</td>
+      <td><input class="header-edit" data-key="${escHtml(k)}" value="${escHtml(val)}"
+          onchange="updateHeader(${origIdx},'${escHtml(k)}',this.value)" /></td>
+      <td><button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px;"
+          onclick="deleteHeader(${origIdx},'${escHtml(k)}')" title="Remove header">✕</button></td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function addHeader() {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const sel    = document.getElementById('newHeaderSelect');
+  const custom = document.getElementById('newHeaderCustomName');
+  const valEl  = document.getElementById('newHeaderValue');
+  const name   = sel.value === '__custom__' ? custom.value.trim() : sel.value;
+  const val    = valEl.value.trim();
+  if (!name) return toast('Enter a header name', 'err');
+  const origIdx = allRequests.indexOf(filteredRequests[currentIndex]);
+  if (!editedRequests[origIdx]) editedRequests[origIdx] = {};
+  if (!editedRequests[origIdx].headers)
+    editedRequests[origIdx].headers = JSON.parse(JSON.stringify(allRequests[origIdx]?.request?.headers || {}));
+  editedRequests[origIdx].headers[name] = [val];
+  sel.value = ''; custom.style.display = 'none'; valEl.value = '';
+  renderHeaders(origIdx);
+  renderList();
+  toast(`Added header: ${name}`, 'ok');
+}
+
+function deleteHeader(origIdx, key) {
+  if (!editedRequests[origIdx]) editedRequests[origIdx] = {};
+  if (!editedRequests[origIdx].headers)
+    editedRequests[origIdx].headers = JSON.parse(JSON.stringify(allRequests[origIdx]?.request?.headers || {}));
+  delete editedRequests[origIdx].headers[key];
+  renderHeaders(origIdx);
+  renderList();
+}
+
+document.getElementById('newHeaderSelect').addEventListener('change', function() {
+  const custom = document.getElementById('newHeaderCustomName');
+  custom.style.display = this.value === '__custom__' ? 'inline-block' : 'none';
+  if (this.value === '__custom__') custom.focus();
+});
+
+// ── Params: parse URI, render, add, delete, update ────────────────────────────
+function getUriParts(uri) {
+  const qIdx = uri.indexOf('?');
+  if (qIdx === -1) return { path: uri, params: [] };
+  const path   = uri.slice(0, qIdx);
+  const search = uri.slice(qIdx + 1);
+  const params = [];
+  for (const part of search.split('&')) {
+    if (!part) continue;
+    const eIdx = part.indexOf('=');
+    if (eIdx === -1) params.push([decodeURIComponent(part), '']);
+    else params.push([decodeURIComponent(part.slice(0, eIdx)), decodeURIComponent(part.slice(eIdx + 1))]);
+  }
+  return { path, params };
+}
+
+function buildUri(path, params) {
+  if (!params.length) return path;
+  const qs = params.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return `${path}?${qs}`;
+}
+
+function renderParams() {
+  if (currentIndex === null) return;
+  const req     = filteredRequests[currentIndex];
+  const origIdx = allRequests.indexOf(req);
+  const uri     = req.request?.uri || '/';
+  const { params } = getUriParts(uri);
+  const tbody   = document.getElementById('paramsBody');
+  const note    = document.getElementById('paramsNote');
+  tbody.innerHTML = '';
+  note.style.display = params.length ? 'block' : 'none';
+  if (!params.length) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:var(--muted);font-size:12px;padding:10px">No query parameters</td></tr>`;
+    return;
+  }
+  params.forEach(([k, v], i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="header-edit" value="${escHtml(k)}"
+          onchange="updateParam(${origIdx},${i},'key',this.value)" /></td>
+      <td><input class="header-edit" value="${escHtml(v)}"
+          onchange="updateParam(${origIdx},${i},'val',this.value)" /></td>
+      <td><button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px;"
+          onclick="deleteParam(${origIdx},${i})" title="Remove param">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function updateParam(origIdx, idx, field, value) {
+  const req = allRequests[origIdx];
+  const { path, params } = getUriParts(req.request?.uri || '/');
+  if (field === 'key') params[idx][0] = value;
+  else params[idx][1] = value;
+  const newUri = buildUri(path, params);
+  req.request.uri = newUri;
+  const base = getBaseUrl();
+  if (base) {
+    try { const u = new URL(base); document.getElementById('targetUrlInput').value = u.origin + newUri; } catch {}
+  }
+  document.getElementById('detailTitle').textContent = `${req.request?.method} ${newUri}`;
+  document.getElementById('s-path').textContent = newUri;
+  renderList();
+}
+
+function deleteParam(origIdx, idx) {
+  const req = allRequests[origIdx];
+  const { path, params } = getUriParts(req.request?.uri || '/');
+  params.splice(idx, 1);
+  const newUri = buildUri(path, params);
+  req.request.uri = newUri;
+  const base = getBaseUrl();
+  if (base) {
+    try { const u = new URL(base); document.getElementById('targetUrlInput').value = u.origin + newUri; } catch {}
+  }
+  document.getElementById('detailTitle').textContent = `${req.request?.method} ${newUri}`;
+  document.getElementById('s-path').textContent = newUri;
+  renderParams();
+  renderList();
+  toast('Parameter removed', 'ok');
+}
+
+function addParam() {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const keyEl   = document.getElementById('newParamKey');
+  const valEl   = document.getElementById('newParamValue');
+  const key     = keyEl.value.trim();
+  if (!key) return toast('Enter a parameter name', 'err');
+  const val     = valEl.value.trim();
+  const origIdx = allRequests.indexOf(filteredRequests[currentIndex]);
+  const req     = allRequests[origIdx];
+  const { path, params } = getUriParts(req.request?.uri || '/');
+  params.push([key, val]);
+  const newUri = buildUri(path, params);
+  req.request.uri = newUri;
+  keyEl.value = ''; valEl.value = '';
+  const base = getBaseUrl();
+  if (base) {
+    try { const u = new URL(base); document.getElementById('targetUrlInput').value = u.origin + newUri; } catch {}
+  }
+  document.getElementById('detailTitle').textContent = `${req.request?.method} ${newUri}`;
+  document.getElementById('s-path').textContent = newUri;
+  renderParams();
+  renderList();
+  toast(`Added param: ${key}`, 'ok');
+}
+
+// ── Move request up / down ─────────────────────────────────────────────────────
+function moveRequest(dir) {
+  if (currentIndex === null) return toast('Select a request first', 'err');
+  const newIdx = currentIndex + dir;
+  if (newIdx < 0 || newIdx >= filteredRequests.length) return;
+  [filteredRequests[currentIndex], filteredRequests[newIdx]] = [filteredRequests[newIdx], filteredRequests[currentIndex]];
+  const ai = allRequests.indexOf(filteredRequests[newIdx]);
+  const bi = allRequests.indexOf(filteredRequests[currentIndex]);
+  [allRequests[ai], allRequests[bi]] = [allRequests[bi], allRequests[ai]];
+  const newEdited = {}, newResults = {};
+  for (const [k, v] of Object.entries(editedRequests)) {
+    const ki = parseInt(k);
+    if (ki === ai) newEdited[bi] = v;
+    else if (ki === bi) newEdited[ai] = v;
+    else newEdited[ki] = v;
+  }
+  for (const [k, v] of Object.entries(replayResults)) {
+    const ki = parseInt(k);
+    if (ki === ai) newResults[bi] = v;
+    else if (ki === bi) newResults[ai] = v;
+    else newResults[ki] = v;
+  }
+  editedRequests = newEdited;
+  replayResults  = newResults;
+  currentIndex = newIdx;
+  renderList();
+  document.querySelectorAll('.req-item')[newIdx]?.scrollIntoView({ block: 'nearest' });
+}
+
+// ── Add new request modal ──────────────────────────────────────────────────────
+const ADD_REQ_TEMPLATES = {
+  GET:     { body: '' },
+  HEAD:    { body: '' },
+  OPTIONS: { body: '' },
+  DELETE:  { body: '' },
+  POST:    { body: JSON.stringify({ key: 'value' }, null, 2) },
+  PUT:     { body: JSON.stringify({ id: 1, key: 'value' }, null, 2) },
+  PATCH:   { body: JSON.stringify({ key: 'updated_value' }, null, 2) },
+};
+
+function openAddReqModal() {
+  const method  = 'GET';
+  document.getElementById('newReqMethod').value = method;
+  document.getElementById('newReqPath').value   = '/';
+  const srcReq  = allRequests.length > 0 ? allRequests[allRequests.length - 1] : null;
+  const srcHdrs = srcReq?.request?.headers || { 'Accept': 'application/json', 'User-Agent': 'http-replayer/1.0' };
+  const skip    = new Set(['content-length','transfer-encoding','connection','keep-alive','host']);
+  const flatHdrs = {};
+  for (const [k, v] of Object.entries(srcHdrs)) {
+    if (!skip.has(k.toLowerCase())) flatHdrs[k] = Array.isArray(v) ? v[0] : v;
+  }
+  document.getElementById('newReqHeaders').value  = JSON.stringify(flatHdrs, null, 2);
+  document.getElementById('newReqBody').value     = ADD_REQ_TEMPLATES[method].body;
+  document.getElementById('newReqBodyWrap').style.display = 'none';
+  document.getElementById('addReqModal').style.display    = 'flex';
+}
+
+function closeAddReqModal() {
+  document.getElementById('addReqModal').style.display = 'none';
+}
+
+function newReqMethodChange() {
+  const method  = document.getElementById('newReqMethod').value;
+  const hasBody = ['POST','PUT','PATCH'].includes(method);
+  document.getElementById('newReqBody').value = ADD_REQ_TEMPLATES[method]?.body || '';
+  document.getElementById('newReqBodyWrap').style.display = hasBody ? 'block' : 'none';
+}
+
+function confirmAddRequest() {
+  const method  = document.getElementById('newReqMethod').value;
+  const path    = document.getElementById('newReqPath').value.trim() || '/';
+  let headers   = {};
+  try { headers = JSON.parse(document.getElementById('newReqHeaders').value || '{}'); } catch { return toast('Headers must be valid JSON', 'err'); }
+  const bodyStr = document.getElementById('newReqBody').value.trim();
+  if (bodyStr) { try { JSON.parse(bodyStr); } catch { return toast('Body must be valid JSON', 'err'); } }
+  const wrappedHeaders = {};
+  for (const [k, v] of Object.entries(headers)) wrappedHeaders[k] = [String(v)];
+  if (bodyStr) wrappedHeaders['Content-Length'] = [String(new TextEncoder().encode(bodyStr).length)];
+  const rawText = `${method} ${path} HTTP/1.1\r\n` +
+    Object.entries(wrappedHeaders).map(([k,v]) => `${k}: ${v[0]}`).join('\r\n') +
+    '\r\n\r\n' + bodyStr;
+  const newReq = {
+    id: `manual-${Date.now()}`, start: new Date().toISOString(), duration: 0,
+    remote_addr: '', _manual: true,
+    request: { method, uri: path, headers: wrappedHeaders, raw: btoa(unescape(encodeURIComponent(rawText))) },
+    response: { status_code: '', status: '' }
+  };
+  const insertAt = currentIndex !== null ? allRequests.indexOf(filteredRequests[currentIndex]) + 1 : 0;
+  allRequests.splice(insertAt, 0, newReq);
+  const newEdited = {}, newResults = {};
+  for (const [k, v] of Object.entries(editedRequests)) { const ki = parseInt(k); newEdited[ki >= insertAt ? ki + 1 : ki] = v; }
+  for (const [k, v] of Object.entries(replayResults))  { const ki = parseInt(k); newResults[ki >= insertAt ? ki + 1 : ki] = v; }
+  editedRequests = newEdited; replayResults = newResults;
+  filteredRequests = [...allRequests];
+  currentIndex = insertAt;
+  document.getElementById('stats').textContent = `${allRequests.length} requests`;
+  document.getElementById('rangeTo').value = allRequests.length;
+  document.getElementById('bulkBar').classList.add('visible');
+  document.getElementById('saveBtn').style.display = 'inline-block';
+  closeAddReqModal();
+  renderList();
+  selectRequest(currentIndex);
+  toast(`Added ${method} ${path}`, 'ok');
+}
+
+document.getElementById('addReqModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeAddReqModal(); });
+document.getElementById('filePathInput').addEventListener('keydown', e => { if (e.key === 'Enter') loadFile(); });
+document.getElementById('saveModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeSaveModal(); });
+
+// ── Resizable columns ──────────────────────────────────────────────────────────
+function initResizableTable(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const th = table.querySelectorAll('thead th')[0];
+  if (!th || th.querySelector('.col-resize-handle')) return;
+  th.style.width = '200px';
+  const handle = document.createElement('div');
+  handle.className = 'col-resize-handle';
+  th.appendChild(handle);
+  let startX, startW;
+  handle.addEventListener('mousedown', e => {
+    startX = e.clientX; startW = th.offsetWidth;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = ev => { th.style.width = Math.max(60, startW + (ev.clientX - startX)) + 'px'; };
+    const onUp   = () => {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    e.preventDefault();
+  });
+}
+
+const _origSwitchTab = switchTab;
+window.switchTab = function(name) {
+  _origSwitchTab(name);
+  if (name === 'headers') initResizableTable('headersTable');
+  if (name === 'params')  initResizableTable('paramsTable');
+};
+initResizableTable('headersTable');
+initResizableTable('paramsTable');
+</script>
+</body>
+</html>
