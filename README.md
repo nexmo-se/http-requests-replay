@@ -42,7 +42,7 @@ Of course if you use ngrok, you may export logged HTTP requests and use that set
 
 Notes:<br>
 - In an ngrok HTTP requests export to a file, oldest HTTP events are at the end of the file, most recent ones are at the beginning of the file, i.e. they are in reverse chronological order. With this tool, when saving into a file, it keeps that reverse chronological order.<br>
-- When exporting from ngrok, unfortunately the (reverse) order of events in the export file does not necessarily match the order of events as shown on the web ngrok page (at http://127.0.0.1:4040/inspect/http), so you may have to manually change the order of events (using up and down arrows), and the new sequence order will be kept when saving to same or a new file.
+- When exporting from ngrok, unfortunately the (reverse) order of events in the export file does not necessarily match the order of events as shown on the ngrok web page (at http://127.0.0.1:4040/inspect/http), so you may have to manually change the order of events (using up and down arrows), and the new sequence order will be kept when saving to same or a new file.
 
 ## Usage
 
