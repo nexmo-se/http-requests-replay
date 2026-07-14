@@ -2,7 +2,7 @@
 
 ## What is it?
 
-This tool allow you to replay HTTP requests to server applications and hosts.
+This tool allows you to replay HTTP requests to server applications and hosts.
 
 You may update an existing list of requests by adding/removing/changing HTTP requests, methods, headers, query parameters, body content, and their values, load and save sets of HTTP requests.
 
