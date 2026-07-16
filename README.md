@@ -105,8 +105,8 @@ v1.0 - Initial version
 v1.1 - Enhancements and bugs fix
 - Now `Find and Replace` can change the argument of Remote IP for all requests at once from a given value to a new one
 - Fixed the issue where the target URL was using only the host argument of the first request, now it uses the host argument of the selected request
-- Fixed the issue `Find and Replace` fields were not cleared when loading a file
-- Added new sample HTTP requests set: sample-requests_export-4.json 
+- Fixed the issue where `Find and Replace` fields were not cleared when loading a file
+- Added new sample HTTP requests set: _sample-requests_export-4.json_
 
 
 
