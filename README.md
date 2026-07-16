@@ -68,7 +68,7 @@ Features
 | Content-Length auto-update | Recalculated in bytes whenever body changes (typing, format, minify, or field apply) |
 | Find & Replace | Replace any value across body/headers/query, or in paths, across all requests at once |
 | Authentication Obfuscation | Replace any Bearer/Basic/Digest arguments across all requests at once |
-| Keys Obfuscation | Replace any Headers arguments which names contain the substing key or token across all requests at once |
+| Keys Obfuscation | Replace any Headers arguments which names contain the substring key or token across all requests at once |
 | Delete request | Removes the selected request with confirmation; list renumbers automatically |
 | Duplicate request | Clones the selected request and inserts it immediately after |
 | Add new request | Adds a new HTTP request, sets default HTTP headers copied from first request and sets a sample body |
