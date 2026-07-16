@@ -198,7 +198,7 @@
 
 <!-- Top bar -->
 <div id="topbar">
-  <h1>HTTP <span>Replayer v1.0</span></h1>
+  <h1>HTTP <span>Replayer v1.1</span></h1>
   <input id="filePathInput" type="text" placeholder="Enter path to ngrok log JSON file…" value="sample-requests_export.json" />
   <button class="btn" onclick="loadFile()">Load</button>
   <button class="btn secondary" id="saveBtn" style="display:none" onclick="openSaveModal()">💾 Save</button>
@@ -229,6 +229,7 @@
   <select id="frScope" onchange="frScopeChange()" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-size:12px;cursor:pointer;">
     <option value="body-headers">Body, Headers &amp; Query</option>
     <option value="path">Path</option>
+    <option value="remote-ip">Remote IP</option>
   </select>
   <input id="frFind" type="text" placeholder="Find…" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;width:200px;" oninput="frPreview()" />
   <input id="frReplace" type="text" placeholder="Replace with…" style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:12px;width:200px;" />
@@ -470,13 +471,19 @@ async function loadFile() {
     replayResults    = {};
     currentIndex     = null;
     loadedFilePath   = filePath;
+    // Clear Find & Replace fields and status
+    document.getElementById('frFind').value    = '';
+    document.getElementById('frReplace').value = '';
+    document.getElementById('frCount').textContent = '';
+    document.getElementById('frScope').selectedIndex = 0;
     document.getElementById('stats').textContent = `${data.total} requests`;
     document.getElementById('bulkBar').classList.add('visible');
     document.getElementById('saveBtn').style.display = 'inline-block';
     document.getElementById('rangeTo').value = data.total;
     if (allRequests.length > 0) {
-      const host = allRequests[0].request?.headers?.Host?.[0] || '';
-      if (host) document.getElementById('targetUrlInput').value = `https://${host}`;
+      const firstReq = allRequests[0];
+      const host = firstReq.request?.headers?.Host?.[0] || firstReq.request?.headers?.host?.[0] || '';
+      if (host) document.getElementById('targetUrlInput').value = `https://${host}${firstReq.request?.uri || '/'}`;
     }
     renderList();
     const activeTab = document.querySelector('.tab.active');
@@ -614,13 +621,20 @@ function selectRequest(idx) {
 
   showReplayResult(origIdx);
 
-  const base = getBaseUrl();
-  if (base) {
-    try {
-      const u = new URL(base);
-      u.pathname = req.request?.uri || '/';
-      document.getElementById('targetUrlInput').value = u.toString();
-    } catch {}
+  // Always derive Target URL from the selected request's own Host header
+  const hdrs = edited.headers || req.request?.headers || {};
+  const hostVal = hdrs?.Host?.[0] || hdrs?.host?.[0] || '';
+  if (hostVal) {
+    document.getElementById('targetUrlInput').value = `https://${hostVal}${req.request?.uri || '/'}`;
+  } else {
+    const base = getBaseUrl();
+    if (base) {
+      try {
+        const u = new URL(base);
+        u.pathname = req.request?.uri || '/';
+        document.getElementById('targetUrlInput').value = u.toString();
+      } catch {}
+    }
   }
   renderList();
 }
@@ -879,6 +893,8 @@ function frPreview() {
       const { params } = getUriParts(allRequests[i].request?.uri || '/');
       if (params.some(([k, v]) => k.includes(find) || v.includes(find))) count++;
     }
+  } else if (scope === 'remote-ip') {
+    count = allRequests.filter(r => (r.remote_addr || '').includes(find)).length;
   } else {
     count = allRequests.filter(r => (r.request?.uri || '').includes(find)).length;
   }
@@ -957,6 +973,20 @@ function frReplaceAll() {
     }
     if (count === 0) return toast('No matches found', 'err');
     toast(`Replaced in ${count} request(s) — body, headers & query`, 'ok');
+  } else if (scope === 'remote-ip') {
+    for (let i = 0; i < allRequests.length; i++) {
+      const cur = allRequests[i].remote_addr || '';
+      if (!cur.includes(find)) continue;
+      allRequests[i].remote_addr = cur.split(find).join(repl);
+      count++;
+    }
+    if (count === 0) return toast('No Remote IP matches found', 'err');
+    // Refresh summary panel if current request was affected
+    if (currentIndex !== null) {
+      const req = filteredRequests[currentIndex];
+      document.getElementById('s-ip').textContent = req.remote_addr || '—';
+    }
+    toast(`Remote IP replaced in ${count} request(s)`, 'ok');
   } else {
     for (let i = 0; i < allRequests.length; i++) {
       const uri = allRequests[i].request?.uri || '';
