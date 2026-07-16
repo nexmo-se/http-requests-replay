@@ -507,6 +507,14 @@ function closeSaveModal() { document.getElementById('saveModal').classList.remov
 async function confirmSave() {
   const filePath = document.getElementById('savePathInput').value.trim();
   if (!filePath) return toast('Enter a file path', 'err');
+  // Check if file already exists on the server before overwriting
+  try {
+    const checkRes = await fetch('/api/exists', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ filePath }) });
+    const checkData = await checkRes.json();
+    if (checkData.exists) {
+      if (!confirm(`⚠️ File already exists:\n${filePath}\n\nOverwrite it?`)) return;
+    }
+  } catch { /* if check fails, proceed anyway */ }
   const toSave = [...filteredRequests].reverse().map((req) => {
     const origIdx = allRequests.indexOf(req);
     const edited  = editedRequests[origIdx];
@@ -650,7 +658,7 @@ function updateHeader(origIdx, key, value) {
 // ── Body helpers ───────────────────────────────────────────────────────────────
 function getDecodedBody(req) {
   const raw = req.request?.raw || '';
-  if (!raw) return '';
+  if(!raw) return '';
   try {
     const decoded = atob(raw);
     const parts   = decoded.split('\r\n\r\n');
@@ -981,7 +989,13 @@ function frReplaceAll() {
       count++;
     }
     if (count === 0) return toast('No Remote IP matches found', 'err');
-    // Refresh summary panel if current request was affected
+    // Mark only the affected requests as edited so ✎ appears
+    for (let i = 0; i < allRequests.length; i++) {
+      if ((allRequests[i].remote_addr || '').includes(repl)) {
+        if (!editedRequests[i]) editedRequests[i] = {};
+        editedRequests[i]._remoteIpEdited = true;
+      }
+    }
     if (currentIndex !== null) {
       const req = filteredRequests[currentIndex];
       document.getElementById('s-ip').textContent = req.remote_addr || '—';

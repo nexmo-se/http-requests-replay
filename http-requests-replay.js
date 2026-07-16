@@ -19,11 +19,18 @@ app.post('/api/load', (req, res) => {
   try {
     const raw = fs.readFileSync(resolved, 'utf8');
     const data = JSON.parse(raw);
-    const requests = (data.requests || []).reverse(); // display in reverse file order
+    const requests = (data.requests || []).reverse();
     res.json({ requests, total: requests.length });
   } catch (e) {
     res.status(500).json({ error: `Failed to parse file: ${e.message}` });
   }
+});
+
+// ── Check if file exists ───────────────────────────────────────────────────────
+app.post('/api/exists', (req, res) => {
+  const { filePath } = req.body;
+  if (!filePath) return res.json({ exists: false });
+  res.json({ exists: fs.existsSync(path.resolve(filePath)) });
 });
 
 // ── Save log file ──────────────────────────────────────────────────────────────
